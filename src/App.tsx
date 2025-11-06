@@ -86,7 +86,8 @@ export default function App() {
       new InventoryPricingEnv(
         () => {},                // onOpen handled below
         () => {},                // onMessage placeholder; we bind later
-        () => {}                 // onClose placeholder
+        () => {},                 // onClose placeholder
+        window.location.origin.replace(/^https/, "wss").replace(/^http/, "ws") + (/localhost/.test(window.location.host) ? ":8765" : "/ws")
       )
   );
 
