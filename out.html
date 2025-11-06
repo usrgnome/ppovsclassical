@@ -1,0 +1,772 @@
+<h1
+id="classical-vs-rl-pricing-for-perishable-inventory-under-stochastic-demand">Classical
+vs RL Pricing for Perishable Inventory under Stochastic Demand</h1>
+<p><strong>Student name:</strong> Joshua Walter <strong>Student
+ID:</strong> 14296418 <strong>Supervisor:</strong> Haoyu Liu
+<strong>Degree/Subject code:</strong> 41030</p>
+<hr />
+<h2 id="abstract">Abstract</h2>
+<p>TODO [Summarise each major section: problem/context → method → key
+findings (with numbers) → recommendations. Ensure it aligns explicitly
+to the stated objectives. Aim for high clarity and coherence to meet HD
+criteria.] &gt; HD tip: one sentence per element (context, aim, method,
+results, recommendation). Make the link to objectives explicit.</p>
+<h2 id="executive-summary">Executive Summary</h2>
+<p>TODO [Non‑technical overview covering: background &amp; objectives;
+methodology/approach and why it was appropriate; main outcomes/findings;
+recommendations; limitations; next steps. Integrate brief quantitative
+highlights.] &gt; HD tip: mirror the report structure and show a clear
+line of sight from objectives → evidence → recommendation.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<!-- TOC -->
+<ul>
+<li><a
+href="#classical-vs-rl-pricing-for-perishable-inventory-under-stochastic-demand">Classical
+vs RL Pricing for Perishable Inventory under Stochastic Demand</a>
+<ul>
+<li><a href="#abstract">Abstract</a></li>
+<li><a href="#executive-summary">Executive Summary</a></li>
+<li><a href="#table-of-contents">Table of Contents</a></li>
+<li><a href="#introduction">Introduction</a>
+<ul>
+<li><a href="#background">Background</a></li>
+<li><a href="#problem-definition">Problem Definition</a></li>
+<li><a href="#objectives">Objectives</a></li>
+<li><a href="#scope-and-limitations">Scope and Limitations</a></li>
+<li><a href="#report-structure">Report Structure</a></li>
+</ul></li>
+<li><a href="#literature-review">Literature Review</a></li>
+<li><a href="#method">Method</a>
+<ul>
+<li><a href="#simulation-design">Simulation Design</a></li>
+<li><a href="#variables-parameters-and-assumptions">Variables,
+Parameters and Assumptions</a>
+<ul>
+<li><a href="#decision-variables-agent-actions">Decision variables agent
+actions</a></li>
+<li><a href="#state-variables-agent-observations">State variables agent
+observations</a></li>
+<li><a href="#environment">Environment</a></li>
+<li><a href="#stochastic-drivers">Stochastic drivers</a></li>
+<li><a href="#conversion-model-parameters">Conversion model
+parameters</a></li>
+<li><a href="#costprice-parameters">Cost/price parameters</a></li>
+<li><a href="#assumptions">Assumptions</a></li>
+</ul></li>
+<li><a href="#controls-and-experimental-conditions">Controls and
+Experimental Conditions</a></li>
+<li><a href="#procedures-step-by-step">Procedures Step-by-Step</a>
+<ul>
+<li><a href="#configure-the-environment">Configure the
+environment</a></li>
+<li><a href="#wrap-the-simulator-for-rl">Wrap the simulator for
+RL</a></li>
+<li><a href="#define-the-reward">Define the reward</a></li>
+<li><a href="#train-ppo">Train PPO</a></li>
+<li><a href="#evaluate-policies">Evaluate policies</a>
+<ul>
+<li><a href="#for-each-policy-simulation-logic">For each policy
+Simulation logic:</a></li>
+</ul></li>
+<li><a href="#run-robustness-checks">Run robustness checks</a></li>
+<li><a href="#compute--export-kpis">Compute &amp; Export KPIs</a></li>
+<li><a href="#run-robustness-checks">Run robustness checks</a></li>
+<li><a href="#generate-plots">Generate plots</a></li>
+</ul></li>
+<li><a href="#tools-software">Tools, Software</a></li>
+<li><a href="#verification--validation">Verification &amp;
+Validation</a></li>
+</ul></li>
+<li><a href="#results">Results</a></li>
+<li><a href="#discussion">Discussion</a></li>
+<li><a href="#conclusion-and-recommendations">Conclusion and
+Recommendations</a></li>
+<li><a href="#references">References</a></li>
+<li><a href="#appendices">Appendices</a>
+<ul>
+<li><a href="#listings">Listings</a></li>
+</ul></li>
+</ul></li>
+</ul>
+<!-- /TOC -->
+<hr />
+<h2 id="introduction">1. Introduction</h2>
+<p>The problem of maximising revenue while managing waste is a complex,
+finely balanced topic that all firms that deal with perishable products
+face. This issue exists across a range of industries, such as food,
+pharmaceuticals, and even fashion, where sellers have to manage the
+inventory of perishable items that lose value or become unsellable after
+their shelf life has passed. Firms must address this optimal pricing
+correctly to maximise revenue and minimise waste. However, a complexity
+arises in this problem when considering how demand can vary. Under
+stochastic demand (demand influenced by various factors), understanding
+and making accurate pricing decisions becomes increasingly complex.
+Dynamic pricing strategies have been developed to predict and understand
+demand and adjust prices over time in response to variables that affect
+demand. These strategies have become increasingly popular as machine
+learning and reinforcement learning technologies have become more
+accessible, enabling improved sales performance in uncertain
+environments. However, accurately implementing dynamic pricing
+strategies in inventory systems with perishability introduces complex
+decision-making challenges, such as determining the optimal price across
+multiple periods, while accounting for current inventory levels, whether
+to hold or replenish, and product shelf-life and stochastic demand. The
+motivation for my research stems from the problem’s importance and
+relevance to almost all firms that manage inventories of perishable
+items. While much of the existing research models perishable inventory
+and stochastic demand as separate factors due to the complexity and lack
+of computer-aided models, there is now a significant gap in using
+advanced algorithms to develop strategies that optimise pricing and
+replenishment decisions across multiple periods. This research paper
+seeks to analyse how optimising dynamic pricing strategies in
+multi-period perishable inventory systems under stochastic demand can
+improve revenue while allowing the possibility to optimise for other
+factors, such as reducing waste and making informed inventory ordering
+decisions.</p>
+<h3 id="background">1.1 Background</h3>
+<p>Perishable units (e.g., fresh foods) contribute disproportionately to
+waste and margin variability due to the challenges in optimising prices
+and inventory policies. Prices influence conversion and demand, while
+poor replenishment decisions can result in spoilage and stockout risk,
+further impacting margins. Retail waste is predominantly an operational
+issue: “causes of food waste are related to… inefficient store
+operations and replenishment policies” (Teller et al., 2018). Small
+margins exacerbate the effect of waste. Margins of grocery retailers are
+usually 2–3%; reducing food waste can double their profit margins
+(Riesenegger &amp; Hübner, 2022). While reducing waste is crucial for
+retailers, price is one of the most effective variables managers can
+manipulate to encourage or discourage demand in the short run (Bitran
+&amp; Caldentey, 2003), thereby reducing waste and improving
+profitability. Many retailers rely on simple pricing policies for their
+inventory. The Fixed Price Policy maintains a static price over a finite
+horizon, making it easy to implement and potentially competitive when
+inventory and demand exhibit slight variance. Inventory Band Pricing
+Policy maps inventory levels to prices, leading to state-dependent
+decisions, but struggles with demand and stock discrepancies. Where
+static policies struggle to remain competitive, dynamic pricing reduces
+waste by 21% while increasing the chain’s gross margins by 3% (Sanders,
+2023). Markdown Policy is a dynamic pricing policy that relies on deeper
+discounts as items near expiry; however, it may result in under- or
+over-discounts when dealing with high stock variances. Myopic Greedy
+Policy chooses a price that maximises the immediate profit given the
+current inventory state, ignoring subsequent steps in the episode, which
+may result in high end-of-horizon waste. Many retailers choose to
+utilise these policies because they are cheap to run, robust and
+straightforward to implement. However, they do not utilise the coupling
+between demand, inventory and forecasting. A successful policy must
+respond in real time to changing inventory states and demand signals;
+otherwise, retailers risk lost sales, overstocking, or eroded profit.
+While maximising profit is the primary indicator of a successful policy,
+it is equally important that a policy can respond to social issues.</p>
+<h3 id="problem-definition">1.2 Problem Definition</h3>
+<p>We consider a finite-horizon, multi-period inventory system that
+holds a single perishable product type with stochastic, price-sensitive
+demand. Each day, a policy adjusts the price and the order quantity to
+maximise profit at the end of the episode. The final profit is the
+cumulative daily profit, which accounts for restock costs, holding
+costs, expirary costs, and stockout costs. The problem is to compare
+classical policy classes (static price, markdown, newsvendor) against
+reinforcement-learning policies (e.g., PPO) on profit, service level,
+and waste.</p>
+<p>In short: How do classical pricing/inventory policies (static,
+markdown, newsvendor) compare to reinforcement-learning policies (e.g.,
+PPO) in multi-period perishable inventory under stochastic demand?</p>
+<h3 id="objectives">1.3 Objectives</h3>
+<p><strong>Aim</strong> To benchmark classical and RL pricing/inventory
+policies through simulation to produce data on profit, service level,
+and waste in multi-period perishable inventory under stochastic
+demand.</p>
+<p><strong>Objectives</strong> 1. Design and implement a simulated
+grocery environment for a single perishable SKU with stochastic, price
+and freshness‑sensitive demand. 2. Train a PPO agent to output (price,
+replenish) actions each period; tune hyperparameters via reproducible
+experiments. 3. Compare PPO to the three baselines on profit, waste
+rate, stockout frequency, and margin volatility over <span
+class="math inline">\ge 100</span> episodes. 4. Report statistical
+significance of differences and provide actionable insights.</p>
+<h3 id="scope-and-limitations">1.4 Scope and Limitations</h3>
+<ul>
+<li><strong>Scope.</strong> Periodic review; single product; single
+location; finite shelf life with discrete age states; stochastic demand
+influenced by price and freshness; immediate or fixed‑lead
+replenishment; no substitution or competition; full price control within
+defined bounds.<br />
+</li>
+<li><strong>Out of scope.</strong> Multi‑SKU cross‑elasticities,
+multi‑echelon supply chains, promotional calendars, strategic customer
+behavior, and real‑world deployment constraints (e.g., price‑change
+frictions).<br />
+</li>
+<li><strong>Assumptions.</strong> Known demand model class and
+elasticity range; perfect state observability; no stockout backorders;
+disposal cost for expired inventory.</li>
+</ul>
+<h3 id="report-structure">1.5 Report Structure</h3>
+<p>TODO</p>
+<hr />
+<h2 id="literature-review">2. Literature Review</h2>
+<p><strong>Foundational Models</strong> There is a consensus in the
+existing research that optimising dynamic pricing with inventory control
+can increase profit and reduce wastage when dealing with perishable
+items. Early frameworks introduced the concepts regarding dynamic
+pricing under uncertain demand (Gallego &amp; van Ryzin, 1994; Zhao
+&amp; Zheng, 2000); however, Keskin, Li and Song were able to further
+advance the existing theory by using data-driven methods that cover
+perishability more extensively by altering pricing and the ordering
+process based on environmental changes to increase profitability (Keskin
+et al., 2022). Elmaghraby and Keskinocak (2003) contribute to
+demand-driven pricing strategies for inventory systems through a
+comprehensive review that concluded that utilising dynamic pricing with
+inventory control can significantly outperform revenue performance when
+compared to static models, especially evident in uncertain demand
+(Elmaghraby &amp; Keskinocak, 2003). Despite the consensus that dynamic
+pricing strategies with inventory control can generate more revenue than
+static models, a divergence between the research is evident in modelling
+assumptions. In some research, the perishability of items is assumed to
+be of constant deterioration (Nahmias, 1982), whereas other studies
+assume a limited fixed shelf-life where perishability does not affect
+the cost of the item; instead, it is disposed of at the end of its
+lifetime. Keskin, Li, and Song (2022) study perishable items in
+stochastic demand to create data-driven pricing &amp; ordering policies.
+They test on supermarket data and calculate regret rates however, they
+acknowledge that in multi-period and changing environments, further work
+still needs to be done on adaptive models that link perishability to
+dynamic pricing. A gap is evident from the existing research -
+connecting perishability to dynamic pricing in a multi-period system
+needs further study, mainly through modelling that more accurately
+represents real-world factors.</p>
+<p><strong>Assumptions</strong> At the core of modelling how dynamic
+pricing can affect revenue is how to approach uncertainty in demand. In
+the research work proposed by Ferreira, K., Simchi-Levi, D., &amp;
+Stewart, H they propose a method of machine learning known as Thompson
+Sampling to understand the effects of uncertain demand parameters
+(Ferreira et al., 2015). Furthermore, additional papers attempt to model
+uncertainty in demand for discrete choice models in dynamic revenue
+strategies to understand how customers react (Talluri &amp; van Ryzin,
+2004). In other research, models attempt to learn from randomness and
+variability in demand using nonparametric learning algorithms that
+modify prices dynamically (Keskin et al., 2022), allowing for pricing
+systems to be able to adjust for unpredictable and evolving demand
+patterns in perishable inventory settings. In the case of airline
+pricing, uncertainty in demand has another layer of complexity - a
+behavioural element that introduces two sources of uncertainty: timing
+&amp; price responsiveness. It is clear that in more theoretical
+research, demand can be modelled using more straightforward static
+functions. However, there is a divergence in methods for modelling
+between theoretical and practical demand. In practical settings, demand
+is treated with more naunce where it cannot be modelled using
+traditional methods. Instead, more cutting-edge methods are used to
+understand it. To handle the real-world complexity of demand, Jo, S.,
+Lee, G. M., &amp; Moon, I. propose using a reinforcement learning
+algorithm to learn from customer patterns instead of 3 relying on fixed
+demand functions (Jo et al., 2024). Despite the research on
+understanding uncertainty in demand, there remains a gap in developing a
+scalable model that can adapt continuously in a scenario with
+perishability across multiple periods in uncertain demand.</p>
+<p><strong>Machine Learning Approaches</strong> As technology continues
+to improve, machine learning has allowed dynamic pricing strategies to
+be more adaptive and flexible, using significantly more data points to
+accurately enhance revenue and reduce wastage of perishable products in
+multi-period situations. Nowak and Pawłowska-Nowak’s research proposes
+how machine learning can improve dynamic pricing using SVMs in
+e-commerce settings (Nowak &amp; Pawłowska-Nowak, 2024). Additionally,
+research by Chen et al aims to understand how machine learning models
+can be used to predict optimal dynamic pricing strategies in a setting
+where uncertain demand exists (Chen et al., 2018). A limitation of using
+machine learning models is that it is not adaptable to new, emergent
+customer demand, which complex behaviour factors may influence. As a
+point of divergence in research, cutting-edge studies examine how
+reinforcement learning can understand complex factors to improve dynamic
+pricing strategies that previous machine learning models could not deal
+with. In the study done by Nomura et al, a deep reinforcement learning
+based approach is proposed. This paper explores how Proximal Policy
+Optimisation can maximise revenue through pricing optimisations and
+inventory restocking decisions. An essential consideration of this
+research is how this model can account for complex demand where
+customers may be more likely to change preferences based on shelf life
+and pricing, and demonstrate the potential to tune to different
+outcomes, such as reducing waste, increasing revenue (Nomura et al.,
+2025). Further use of reinforcement learning looks at how including Deep
+Q-Learning (DQL) can address the problems faced when modelling dynamic
+pricing and ordering problems for perishable products in uncertain
+demand. In Yavuz &amp; Kaya’s research, deep reinforcement learning can
+outperform all traditional approaches in handling perishable products
+(Yavuz &amp; Kaya, 2024). While cutting-edge research moves away from
+methods best suited to theoretical understanding of relating dynamic
+pricing to demand, there is still a gap in research when comparing how
+different types of advanced computer-aided learning, such as Machine
+Learning and Reinforcement Learning, can benefit this problem.</p>
+<hr />
+<h2 id="method">3. Method</h2>
+<p>This study adopts a simulation-based optimisation framework in which
+the problem is modelled as a finite-horizon Markov Decision Process
+(MDP) for perishable inventory under stochastic, price-sensitive demand.
+In this simulation, the dynamic pricing policies have been optimised,
+enabling the evaluation of each strategy under controlled uncertainty
+and perishability without resorting to extreme analytical
+simplifications.</p>
+<p>The success of a policy is computed by comparing the average
+end-of-horizon profit and the profit standard deviation with the
+optimal: high profit, low deviation = high reward, low risk; and the
+least optimal: low profit, high deviation = low reward, high risk.</p>
+<p>This method fits the research question, as the MDP explicitly encodes
+the trade-offs between ageing, lost sales, and expiring items across a
+finite horizon, enabling the testing and evaluation of different pricing
+policies.</p>
+<h3 id="simulation-design">3.1 Simulation Design</h3>
+<p><strong>Overview</strong> The simulation has been set up to enable a
+single perishable item type within a finite-horizon inventory system.
+Demand is stochastic, price-sensitive, and influenced by seasonal
+multipliers (e.g., weekends may see more or less demand than weekdays).
+Time is discrete (days), and at the start of each day, expired units are
+removed. For the benchmarks, a single perishable item type was chosen
+(see Listing 1). This item was chosen to match the properties of
+milk—short shelf life, high demand, low cost, and simplified properties
+such as no salvage costs. The policy being evaluated sets a selling
+price for the day and optionally restocks inventory. From this action, a
+random demand is generated, and sales are completed FIFO from the
+inventory. The day is then ticked to the next period, and the KPIs are
+recorded. This process will repeat until the environment terminates. The
+environment has been set up to be configurable, enabling the evaluation
+of different scenarios for item types, and includes reproducible
+randomness with a seed parameter.</p>
+<p><strong>Data Collection</strong> All data collected by the simulation
+is stored locally as a CSV file to ensure security. Policy evaluation is
+run multiple times across different seeds to ensure fair, repeatable
+comparisons between policies.</p>
+<h3 id="variables-parameters-and-assumptions">3.2 Variables, Parameters
+and Assumptions</h3>
+<h4 id="decision-variables-agent-actions">Decision variables (agent
+actions)</h4>
+<ul>
+<li><strong>Price</strong>: (p_t ).</li>
+<li><strong>Replenishment fraction</strong>: (r_t ), mapped to an
+<strong>order quantity</strong> (R_t), capped by
+<strong><code>max_restock</code></strong> and
+<strong>capacity</strong>.</li>
+</ul>
+<h4 id="state-variables-agent-observations">State variables (agent
+observations)</h4>
+<ul>
+<li>On-hand inventory (I_t)</li>
+<li>Day index (episode progress) and day-of-week encodings ((, ))</li>
+<li>Current <strong>price fraction</strong> ()</li>
+<li>Normalized visitors for <strong>today</strong> and
+<strong>tomorrow</strong> (<code>optional forcasting</code>)</li>
+<li><strong>Capacity-left fraction</strong> (free capacity / total
+capacity)</li>
+<li><strong>Expiry-pressure</strong> (share of stock expiring within two
+days)</li>
+</ul>
+<h4 id="environment">Environment</h4>
+<ul>
+<li><strong>Horizon</strong>: max_days ( ) (default 30)</li>
+<li><strong>Self Life:</strong> expiration_days ( ) (default 5)</li>
+<li><strong>Initial Inventory Size:</strong> initial_inventory (default
+50)</li>
+<li><strong>Termination:</strong> day () max_days</li>
+<li><strong>Day index:</strong> t</li>
+<li><strong>Inventory:</strong> [(day_created, qty)…]</li>
+</ul>
+<h4 id="stochastic-drivers">Stochastic drivers</h4>
+<ul>
+<li><strong>Daily visitors</strong> (V_t): weekly seasonality + Gaussian
+noise</li>
+<li><strong>Demand noise model</strong>: Poisson / Binomial / Negative
+Binomial</li>
+</ul>
+<h4 id="conversion-model-parameters">Conversion model parameters</h4>
+<ul>
+<li><strong>wtpLogNormal</strong></li>
+<li><strong>logitLogPrice</strong></li>
+<li><strong>elasticity</strong></li>
+<li><strong>linear</strong></li>
+<li><strong>exponential</strong></li>
+</ul>
+<h4 id="costprice-parameters">Cost/price parameters</h4>
+<ul>
+<li><strong>Restock cost</strong> (c_r)</li>
+<li><strong>Holding cost</strong> (c_h)</li>
+<li><strong>Disposal</strong> implicit via expiry</li>
+<li>Optional penalties:
+<ul>
+<li><strong>Stockouts</strong>: (_{})</li>
+<li><strong>Price jumps</strong>: (_{p})</li>
+</ul></li>
+</ul>
+<h4 id="assumptions">Assumptions</h4>
+<ul>
+<li>Single SKU and single outlet</li>
+<li>The simulated product is a low-priced, high-volume, short-shelf-life
+item.</li>
+<li>Perfect state observability</li>
+<li>No backorders; no substitution</li>
+<li>Full price flexibility within bounds</li>
+<li>Environment and policy share <strong>no hidden
+information</strong></li>
+</ul>
+<h3 id="controls-and-experimental-conditions">3.3 Controls and
+Experimental Conditions</h3>
+<ul>
+<li><p>Environment controls: identical traffic seasonality, noise
+parameters, shelf-life, capacity, and costs across all runs and
+policies.</p></li>
+<li><p>Evaluation seeds: a fixed list of random seeds is used for every
+policy (PPO and baselines) so episode realisations are
+comparable.</p></li>
+<li><p>Baselines: three non-learning comparators are defined a
+priori—(i) Myopic + Fixed Replenishment, (ii) Rules-based Markdown,
+(iii) Newsvendor-inspired—with parameters fixed before
+evaluation.</p></li>
+</ul>
+<h3 id="procedures-step-by-step">3.4 Procedures (Step-by-Step)</h3>
+<h4 id="configure-the-environment">1. Configure the environment</h4>
+<p>Specify: - <strong>Horizon</strong> (<code>episode length</code>) -
+<strong>Shelf-life</strong> (<code>expiration_days</code>) -
+<strong>Capacity</strong> - <strong>Price bounds</strong> ([p_{},,
+p_{}]) - <strong>Costs</strong>: restock (c_r), holding (c_h) -
+<strong>Traffic</strong>: weekly seasonality parameters and Gaussian
+noise level - <strong>Conversion model</strong> (default:
+<strong>log-normal WTP</strong>) - <strong>Demand noise</strong>
+(default: <strong>Poisson</strong>; Binomial / NegBin)</p>
+<blockquote>
+<p>For this simulation <strong>Listing 1</strong> was used as the
+configuration</p>
+</blockquote>
+<h4 id="wrap-the-simulator-for-rl">2. Wrap the simulator for RL</h4>
+<ul>
+<li>Provide a <strong>Gymnasium</strong> wrapper exposing the
+<strong>9-feature observation vector</strong> and a <strong>continuous
+2-D action</strong> ((p_t, r_t)).</li>
+<li>Observation features (normalized): inventory fraction, day fraction,
+sin/cos DOW, price fraction, today/tomorrow visitors, capacity-left
+fraction, expiry-pressure.</li>
+<li>Actions: price (p_t) and replenishment fraction (r_t) mapped to
+order quantity (R_t) (capped by <code>max_restock</code> and capacity
+left).</li>
+</ul>
+<h4 id="define-the-reward">3. Define the reward</h4>
+<p>Daily <strong>profit</strong>: [ <em>t ;=; p_t S_t; -; c_r R_t; -;
+c_h I</em>{t+1}\ ] [ p_t: \ S_t: \ c_r: \ R_t: \ R_t: \ c_h: \ I_{t+1}:
+\ ] Reward equals profit <strong>minus penalties</strong> for unmet
+demand and large price jumps (tunable weights): [ r_t = <em>t; -;
+</em>{},(0, D_t - S_t); -; _{p},,. ]</p>
+<h4 id="train-ppo">4. Train PPO</h4>
+<ul>
+<li>Use PPO with clipped objective, GAE-(), entropy regularisation, and
+an MLP policy/value network.</li>
+<li>Hyperparameters are fixed before tuning.</li>
+</ul>
+<h4 id="evaluate-policies">5. Evaluate policies</h4>
+<ul>
+<li>Run each frozen PPO checkpoint and each baseline on the same
+evaluation seed set for (N) episodes per policy.</li>
+<li>Log episode-level metrics.</li>
+</ul>
+<h5 id="for-each-policy-simulation-logic">For each policy (Simulation
+logic):</h5>
+<blockquote>
+<p><strong>Figure 1</strong> Daily Simulation Flow for Pricing and
+Restocking</p>
+</blockquote>
+<figure>
+<img src="img/flow_chart.png" alt="image info" />
+<figcaption aria-hidden="true">image info</figcaption>
+</figure>
+<ul>
+<li><ol type="1">
+<li>Remove expired inventory &amp; update last_expired.</li>
+</ol></li>
+<li><ol start="2" type="1">
+<li>Record opening inventory.</li>
+</ol></li>
+<li><ol start="3" type="1">
+<li>Restock (capacity-limited) &amp; record last_restocked.</li>
+</ol></li>
+<li><ol start="4" type="1">
+<li>Read foot traffic for the day &amp; record last_foot_traffic.</li>
+</ol></li>
+<li><ol start="5" type="1">
+<li>Sample demand from the selected conversion &amp; noise model.</li>
+</ol></li>
+<li><ol start="6" type="1">
+<li>Fulfil sales as FIFO from inventory &amp; record computed sales +
+unmet demand.</li>
+</ol></li>
+<li><ol start="7" type="1">
+<li>Compute revenue, costs, and daily profit, and update running totals
+and last_* KPI metrics.</li>
+</ol></li>
+<li><ol start="8" type="1">
+<li>Increment day; construct next state.</li>
+</ol></li>
+<li><ol start="9" type="1">
+<li>Repeat from step 1 if not terminated.</li>
+</ol></li>
+<li><ol start="10" type="1">
+<li>Record KPIs to CSV.</li>
+</ol></li>
+</ul>
+<h4 id="run-robustness-checks">6. Run robustness checks</h4>
+<ul>
+<li>Ablations: remove expiry-pressure; remove tomorrow-traffic.</li>
+<li>Sensitivity (one factor at a time): NegBin vs. Poisson; conversion
+model; penalty weights; shelf-life; elasticity.</li>
+</ul>
+<h4 id="compute-export-kpis">7. Compute &amp; Export KPIs</h4>
+<p>For each policy, compute and save to CSV file: - <strong>Total profit
+mean</strong> final_cum_profit_mean - <strong>Total profit STD</strong>
+final_cum_profit_std - <strong>Total sales mean</strong>
+total_sales_mean - <strong>Total unmet demand mean</strong>
+total_unmet_mean - <strong>Total waste mean</strong> total_waste_mean -
+<strong>Missed margin mean</strong> missed_margin_mean - <strong>Waste
+cost mean</strong> waste_cost_mean - <strong>Episodes</strong>
+episodes</p>
+<h4 id="run-robustness-checks-1">8. Run robustness checks</h4>
+<ul>
+<li><strong>Ablations</strong>: remove expiry-pressure; remove
+tomorrow-traffic.</li>
+<li><strong>Sensitivity</strong> (one factor at a time): NegBin
+vs. Poisson; conversion model; penalty weights; shelf-life;
+elasticity.</li>
+</ul>
+<h4 id="generate-plots">9. Generate plots</h4>
+<ul>
+<li>Run the plots generator tool to compute features and export plots
+and tables.</li>
+</ul>
+<h3 id="tools-software">3.5 Tools, Software</h3>
+<ul>
+<li>Python (3.9–3.12 commonly)</li>
+<li>NodeJS</li>
+<li>stable-baselines3 (SB3) — PPO</li>
+<li>PyTorch</li>
+<li>Gymnasium</li>
+<li>SB3 VecEnv</li>
+<li>Monitor wrapper</li>
+<li>TensorBoard</li>
+<li>NumPy</li>
+<li>Matplotlib</li>
+<li>React</li>
+</ul>
+<h3 id="verification-validation">3.5 Verification &amp; Validation</h3>
+<p><strong>Simulation Environment</strong> To test the simulation
+environment, a gameified UI was created that allows users to interact
+with the environment the same way that the policies do (see Listings 2,
+3, and 4). The purpose was to publish the simulation online, have real
+users interact with the system, identify edge cases and bugs, and gather
+feedback and validate expected behaviours.</p>
+<p><strong>Policies</strong> To ensure fairness across policy
+validation, the ‘randomness’ in each environment was seeded to ensure
+reproducible behaviour. In addition, the actions of each policy were
+monitored and checked for out-of-bounds values during stress tests.
+Furthermore, the simulation environment recorded the values for each
+state and wrote them to a CSV file. A sepperate script was created to
+generate a graphical display that reflects the actions of the policy
+throughout an episode (e.g Listing 5 shows the PPO policy on episode
+1).</p>
+<hr />
+<h2 id="results">4. Results</h2>
+<blockquote>
+<p><strong>Figure 2</strong> Final Profit Per Episode Heatmap</p>
+</blockquote>
+<p><img src="img/Figure_12.png" alt="image info" /> Heat map of
+cumulative profit for each episode by policy (rows) across episodes
+(columns). The colour encodes profit magnitude: greater variation
+indicates higher volatility in the policy’s performance (greater
+cumulative profit std), while uniform rows denote more stable
+performance. Both PPO and Myopic policies consistently achieve the
+highest performance.</p>
+<blockquote>
+<p><strong>Figure 3</strong> Average Final Profit per Policy</p>
+</blockquote>
+<p><img src="img/Figure_13.png" alt="image info" /> Mean end-of-horizon
+profit by policy (averaged across episodes). Higher bars = higher
+average profit. PPO was the highest performer for profit, totalling an
+average episode profit of $716. Myopic was the second-best-performing
+policy with an average episode profit of $690. Markdown policies rank
+third and fourth with an average episode profit of $560-$623, and the
+following policies are a mix between fixed-price and SS policies.</p>
+<blockquote>
+<p><strong>Table 1.</strong> Policy Level Averages Across Episodes</p>
+</blockquote>
+<p><img src="img/table1.png" alt="image info" /> Policy averages over
+100 episodes. Columns show mean end-of-horizon profit and standard
+deviation, sales, unmet demand, waste, missed margin (from unmet), and
+waste cost. This table enables direct comparison of profitability and
+the other variables. PPO is the most profitable ($715.9 ± $84.7) policy
+with low unmet (10.4) and low waste (1.9). Myopic-greedy is the next
+closest in profit ($690.4 ± $83.2) and has higher unmet (28.6) but
+similarly small waste (1.2). Markdown_p06_t0.5 ($622.9 ± $103.5)
+achieves high profit but at the cost of higher waste (23.1) and waste
+cost (27.8), suggesting it is buying profit by overstocking.
+Markdown_p03.5_t0.5 ($559.6 ± $77.5) has high sales (318.8); however, it
+is unable to meet demand, resulting in high unmitigated (60.3) and
+missed margin (99.7), and profit below PPO. Fixed_price_1 and
+sS_price1_s60_S150 produce the highest sales (459.7) but fail to produce
+a profit (−$79.4 ± $15.9) as the unmet is enormous (600.1), indicating
+that when prices get too low, there is excess demand and stockouts,
+resulting in high missed margins and low profit. Fixed_price_6 and its
+sS variants have high waste (102.9) and subsequently produce enormous
+waste costs ($123.5). While profit is generated ($358.0), it is much
+lower than the top performing models, and variability is high (±$111.3).
+Fixed_price_3.5 / sS_price3.5 reach profits of $493.5 ± $115.2) but are
+an unfavourable risk/return trade-off compared to the top level
+policies. In contrast, the $1 variants have low SD and are consistently
+unprofitable.</p>
+<hr />
+<h2 id="discussion">5. Discussion</h2>
+<p><strong>What happened</strong></p>
+<p>Over the 100 episodes, PPO was the policy that resulted in the
+highest mean end-of-horizon profit, dominating on risk-return with high
+profit low variance (≈ $715.9 ± $84.7). Not only did PPO achieve the
+highest profit, but it also had low unmet demand (10.4) and waste (1.9),
+making it more sustainable while maintaining high service. This result
+aligns with other research showing that the performance of the trained
+RL policy is competitive with or superior to the corresponding baselines
+(Balaji et al., 2019). The second-best-performing policy was the
+Myopic-greedy policy, which had a lower average profit (≈ $690.4 ±
+$83.2) but also had unmet demand (28.6). The two following policies were
+both markdown variants; however, their performance differed
+significantly: markdown_p06_t0.5 earned a relatively high profit (≈
+$622.9 ± $103.5) by trading for higher waste (23.1) and waste cost
+($27.8), due to high prices driving down conversion. Markdown_p03.5_t0.5
+had high sales (318.8) but could not properly manage inventory levels,
+resulting in stockouts (unmet 60.3) and large missed margins (99.7).
+Ultimately, by being unable to keep up with demand, this policy’s profit
+was capped at (≈ $559.6 ± $77.5). At the extremes for the policies,
+fixed_price_1 / sS_price1 both produced the highest sales (459.7).
+However, both were unable to generate profits (≈ −$79.4 ± $15.9) due to
+being unable to keep up with demand (unmet 600.1), whereas the
+fixed_price_6 / sS_price6 variants overpriced inventory, driving down
+conversion rates. This resulted in low sell-out rates, producing high
+waste (102.9) and waste costs ($123.5), resulting in a loss of (≈ $358.0
+± $111.3).</p>
+<p><strong>Why it happened</strong></p>
+<p>The simulation results demonstrate patterns explored in existing
+research on pricing mechanisms. For example, the Newsvendor problem is a
+classic challenge: if too much stock is ordered, there will be excess
+stock at the end of the period, and if too little stock is ordered,
+demand peaks result in unmet sales (Schweitzer and Cachon, 2000). In
+this simulation, the successful policies generated profit despite the
+added complexity of perishable inventory by selecting prices/restock
+quantities that balance overage (waste) and underage (stockouts/missed
+margin). However, policies that set the price too low (e.g.,
+fixed_price_1) shifted the equilibrium towards higher stockouts. In
+contrast, the policies that set the price too high (e.g., fixed_price_6)
+led to lower inventory sell-through and higher waste. The PPO policy
+demonstrated joint control over price restocking, allowing it to track
+this trade-off episode by episode and simultaneously reduce underage and
+overage costs—consistent with newsvendor theory and optimality in
+dynamic inventory.</p>
+<p>Another mechanism demonstrated by the differing approaches in the
+policies is the trade-off between learning dynamics and greediness. In
+short, this is a balance between making an optimal decision for the
+current period without considering future periods vs. considering the
+entire finite horizon (Besbes, Chaneton, and Moallemi, 2021). The PPO
+method learns effective decision policies while preventing significant
+updates via a clipped surrogate objective (Wang, He, and Tan, n.d.),
+thereby enabling the policy to learn stable improvements despite
+training in a partially observed, noisy environment (Schulman et al.,
+2017). In addition, the PPO actor observes inputs such as the expiring
+fraction of the inventory, foot traffic forecast, day of week, and
+remaining inventory capacity, which allow it to learn pricing paths that
+may result in lower immediate profit but favour higher profit across the
+episode. In contrast, the myopic policy favours short-term profit at the
+expense of higher unmet demand (myopic = 28.6 vs PPO = 10.4). Overall,
+this caused the myopic policy to average close to the PPO policy but not
+surpass it.</p>
+<p>While the remaining policies resulted in lower profits at higher risk
+(larger std in average episode), they also revealed interesting issues.
+Markdown_p06_t0.5 policy tries to ‘buy revenue’ by overstocking and
+marking down inventory price, which results in a temporary revenue boost
+but enormous waste costs. Additionally, the twin policy
+markdown_p03.5_t0.5 uses a low initial price, leading to demand
+exceeding availability and resulting in large unmet and missed margins
+even with high sales.</p>
+<p><strong>Implications</strong></p>
+<p>In practice, we should replace classic policies with RL-based
+policies as the primary drivers of pricing and inventory control
+decisions for perishable items. However, while RL algorithms can perform
+better overall, they should be used with care and adequately wrapped in
+guardrails to prevent extreme actions. Myopic models should be used as a
+fallback if any input to the RL models fails or KPIs exceed
+thresholds.</p>
+<hr />
+<h2 id="conclusion-and-recommendations">6. Conclusion and
+Recommendations</h2>
+<p>The main goal of the current study was to benchmark the classical
+policies (static, markdown, myopic/newsvendor) vs. the RL (PPO) policy
+for a multi-period perishable inventory under stochastic demand. The PPO
+policy was the clear leader, with the highest mean profit and the lowest
+unmet demand and waste. The myopic policy was the second-highest
+performer, while the markdown variants traded profit for higher waste or
+stockouts, and extreme static prices could not generate profit. These
+results indicate that horizon-aware, joint price–order control (PPO)
+best balances overage/underage costs, whereas greedy or rigid rules
+mismanage demand or spoilage.</p>
+<p><strong>Recommendations</strong> Several important changes need to be
+implemented to expand this to real-world scenarios: - 1. Consider a more
+realistic profit calculation that includes fixed costs, waste/disposal
+fees, salvage revenue, cost of capital, labour costs, etc. - 2. Expand
+the observation vector for the PPO model to include additional state
+indicators, such as forecasting. - 3. Train the PPO on multiple
+configurations (moving towards a generalised policy for any perishable
+item).</p>
+<hr />
+<h2 id="references">References</h2>
+<p>Format all in-text citations and reference list in <strong>APA
+7th</strong>. Use reference managers (e.g., Zotero, EndNote, Mendeley)
+to ensure consistency.</p>
+<hr />
+<h2 id="appendices">Appendices</h2>
+<h3 id="listings">Listings</h3>
+<p><strong>Listing 1 - Configuration used for simulation</strong></p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;max_days&quot;</span><span class="fu">:</span> <span class="dv">30</span><span class="fu">,</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;initial_inventory&quot;</span><span class="fu">:</span> <span class="dv">30</span><span class="fu">,</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;expiration_days&quot;</span><span class="fu">:</span> <span class="dv">7</span><span class="fu">,</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;restock_cost&quot;</span><span class="fu">:</span> <span class="fl">1.2</span><span class="fu">,</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;holding_cost&quot;</span><span class="fu">:</span> <span class="fl">0.01</span><span class="fu">,</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;base_demand&quot;</span><span class="fu">:</span> <span class="dv">50</span><span class="fu">,</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;price_range&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="fl">1.0</span><span class="ot">,</span> <span class="fl">6.0</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;max_restock&quot;</span><span class="fu">:</span> <span class="dv">150</span><span class="fu">,</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;inventory_capacity&quot;</span><span class="fu">:</span> <span class="dv">220</span><span class="fu">,</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;initial_price&quot;</span><span class="fu">:</span> <span class="fl">3.5</span><span class="fu">,</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;demand_config&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;traffic&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;base&quot;</span><span class="fu">:</span> <span class="dv">50</span><span class="fu">,</span></span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;weekdayMultipliers&quot;</span><span class="fu">:</span> <span class="ot">[</span><span class="fl">0.9</span><span class="ot">,</span> <span class="fl">0.9</span><span class="ot">,</span> <span class="fl">1.0</span><span class="ot">,</span> <span class="fl">1.0</span><span class="ot">,</span> <span class="fl">1.1</span><span class="ot">,</span> <span class="fl">1.3</span><span class="ot">,</span> <span class="fl">1.4</span><span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;weekdayStart&quot;</span><span class="fu">:</span> <span class="st">&quot;Mon&quot;</span><span class="fu">,</span></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;visitorNoiseStd&quot;</span><span class="fu">:</span> <span class="fl">40.0</span><span class="fu">,</span></span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;priceTrafficCut&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;priceTrafficDelta&quot;</span><span class="fu">:</span> <span class="fl">15.0</span></span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>    <span class="fu">},</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;conversion&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;model&quot;</span><span class="fu">:</span> <span class="st">&quot;wtpLogNormal&quot;</span><span class="fu">,</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;p1&quot;</span><span class="fu">:</span> <span class="fl">3.0</span><span class="fu">,</span></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;c1&quot;</span><span class="fu">:</span> <span class="fl">0.1</span><span class="fu">,</span></span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;p2&quot;</span><span class="fu">:</span> <span class="fl">5.0</span><span class="fu">,</span></span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;c2&quot;</span><span class="fu">:</span> <span class="fl">0.04</span><span class="fu">,</span></span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;p0&quot;</span><span class="fu">:</span> <span class="fl">10.0</span><span class="fu">,</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;c0&quot;</span><span class="fu">:</span> <span class="fl">0.2</span><span class="fu">,</span></span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;elasticity&quot;</span><span class="fu">:</span> <span class="fl">-0.5</span><span class="fu">,</span></span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;linearPriceCoeff&quot;</span><span class="fu">:</span> <span class="fl">1.0</span><span class="fu">,</span></span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;expElasticity&quot;</span><span class="fu">:</span> <span class="fl">0.05</span></span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>    <span class="fu">},</span></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>    <span class="dt">&quot;noise&quot;</span><span class="fu">:</span> <span class="fu">{</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;model&quot;</span><span class="fu">:</span> <span class="st">&quot;poisson&quot;</span><span class="fu">,</span></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;negbinK&quot;</span><span class="fu">:</span> <span class="fl">5.0</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">}</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<p><strong>Listing 2 - Simulation UI Config for Testing</strong> <img
+src="img/sim_setup.png" alt="image info" /></p>
+<p><strong>Listing 3 - Simulation UI Daily Screen for Testing</strong>
+<img src="img/sim_daily.png" alt="image info" /></p>
+<p><strong>Listing 4 - Simulation UI Night Screen for Testing</strong>
+<img src="img/sim_night.png" alt="image info" /></p>
+<p><strong>Listing 5 - Example of Policy Dashboard</strong> <img
+src="img/policy_ppo.png" alt="image info" /></p>
