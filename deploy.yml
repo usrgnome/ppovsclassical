@@ -1,0 +1,27 @@
+- hosts: app_servers
+  become: true
+  tasks:
+    - name: Ensure app directory exists
+      file:
+        path: /opt/yourapp
+        state: directory
+        owner: root
+        group: root
+
+    - name: Pull latest code
+      git:
+        repo: 'git@github.com:your-org/your-repo.git'
+        dest: /opt/yourapp
+        version: main
+        accept_hostkey: yes
+
+    - name: Install Python deps
+      command: pip install -r requirements.txt
+      args:
+        chdir: /opt/yourapp
+
+    - name: Restart service
+      systemd:
+        name: yourapp
+        state: restarted
+        enabled: yes
