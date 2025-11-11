@@ -87,7 +87,7 @@ export default function App() {
         () => {},                // onOpen handled below
         () => {},                // onMessage placeholder; we bind later
         () => {},                 // onClose placeholder
-        window.location.origin.replace(/^https/, "wss").replace(/^http/, "ws") + (/localhost/.test(window.location.host) ? ":8765" : "/ws")
+        window.location.hostname === "localhost" ? "ws://localhost:8765" : window.location.origin.replace(/^https/, "wss").replace(/^http/, "ws") + "/ws"
       )
   );
 

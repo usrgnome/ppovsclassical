@@ -456,9 +456,10 @@ export default function RetroShopUI({
                         Price
                       </label>
                       <input
+                        step={0.1}
                         id="price-slider"
                         type="range"
-                        min={Math.max(1, COST_PER_UNIT)}
+                        min={1}
                         max={MAX_PRICE}
                         value={pricePlan}
                         onChange={(e) => setPricePlan(Number(e.target.value))}

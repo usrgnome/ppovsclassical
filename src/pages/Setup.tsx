@@ -307,6 +307,7 @@ export default function IntroScreen({
                 label="Restock Cost (per unit)"
                 value={restockCost}
                 onChange={setRestockCost}
+                step={0.1}
                 min={1}
               />
               <InputField
@@ -324,15 +325,18 @@ export default function IntroScreen({
                 label="Holding Cost (per unit/day)"
                 value={holdingCost}
                 onChange={setHoldingCost}
+                step={0.1}
               />
               <InputField
                 label="Initial Price"
                 value={initialPrice}
                 onChange={setInitialPrice}
+                step={0.1}
                 min={1}
               />
               <InputField
                 label="Max Price"
+                step={0.1}
                 value={maxPrice}
                 onChange={setMaxPrice}
                 min={2}
@@ -434,21 +438,25 @@ export default function IntroScreen({
                       label="p1 (price)"
                       value={p1}
                       onChange={setP1}
+                      step={0.1}
                     />
                     <InputField
                       label="c1 (conversion @ p1)"
                       value={c1}
                       onChange={setC1}
+                      step={0.01}
                     />
                     <InputField
                       label="p2 (price)"
                       value={p2}
                       onChange={setP2}
+                      step={0.1}
                     />
                     <InputField
                       label="c2 (conversion @ p2)"
                       value={c2}
                       onChange={setC2}
+                      step={0.01}
                     />
                   </div>
                 </>
@@ -592,12 +600,14 @@ function InputField({
   label,
   value,
   onChange,
-  min = 0
+  min = 0,
+  step = 'any',
 }: {
   label: string;
   value: number;
   onChange: (val: number) => void;
   min?: number;
+  step?: number | 'any';
 }) {
   const handleBlur = () => { // @ts-ignore
     if (value === '' || isNaN(value)) { // @ts-ignore
@@ -612,6 +622,7 @@ function InputField({
         type="number"
         value={Number.isFinite(value) ? value : ''}
         min={min}
+        step={step}
         onChange={(e) => {
           const newValue = e.target.value === '' ? '' : parseFloat(e.target.value); // @ts-ignore
           if (!isNaN(newValue)) { // @ts-ignore
