@@ -296,7 +296,7 @@ export default function IntroScreen({
         <div className="rounded-3xl border-8 border-[#3a322b] bg-[#7d4321] shadow-[0_12px_0_#3a322b,0_28px_40px_rgba(0,0,0,0.35)] p-6">
           <div className="mb-6 flex items-center justify-center">
             <div className="px-6 py-3 rounded-lg border-4 border-[#3a322b] bg-[#cf7830] shadow-[inset_0_-6px_0_#a55612] shadowed">
-              SIMULATION SETUP
+              SIMULATION SETUP v1.0
             </div>
           </div>
 

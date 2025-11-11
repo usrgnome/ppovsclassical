@@ -1,27 +1,25 @@
 - hosts: app_servers
-  become: true
+  gather_facts: false  # faster; turn on later if you need facts
+  become: false        # you're already root
+
   tasks:
-    - name: Ensure app directory exists
-      file:
-        path: /opt/yourapp
-        state: directory
-        owner: root
-        group: root
-
     - name: Pull latest code
-      git:
-        repo: 'git@github.com:your-org/your-repo.git'
-        dest: /opt/yourapp
-        version: main
-        accept_hostkey: yes
-
-    - name: Install Python deps
-      command: pip install -r requirements.txt
+      ansible.builtin.command: git pull
       args:
-        chdir: /opt/yourapp
+        chdir: /root/ppovsclassical
 
-    - name: Restart service
-      systemd:
-        name: yourapp
-        state: restarted
-        enabled: yes
+    - name: Build app with npm (via nvm)
+      ansible.builtin.shell: |
+        . /root/.nvm/nvm.sh
+        cd /root/ppovsclassical
+        npm run build
+      args:
+        executable: /bin/bash
+
+    - name: Copy built files to web root
+      ansible.builtin.copy:
+        src: /root/ppovsclassical/build/
+        dest: /var/www/html/
+        remote_src: true
+        # owner: www-data   # uncomment if you want
+        # group: www-data   # a specific owner/group
