@@ -1,35 +1,3 @@
----
-header-includes:
-  - \usepackage{enumitem}
-  - \setlistdepth{20}
-  - \renewlist{itemize}{itemize}{20}
-  - \renewlist{enumerate}{enumerate}{20}
-  - \renewlist{description}{description}{20}
-  - \setlist[itemize]{label=\textbullet}
-  - \usepackage{titlesec}
-  # Make Markdown headings more distinct
-  - \titleformat{\section}
-      {\sffamily\Large\bfseries}   % style for # (section)
-      {\thesection}                % section number
-      {0.8em}                      % space between number and text
-      {}
-  - \titleformat{\subsection}
-      {\sffamily\large\bfseries}   % style for ## (subsection)
-      {\thesubsection}
-      {0.8em}
-      {}
-  - \titleformat{\subsubsection}
-      {\sffamily\normalsize\bfseries}
-      {\thesubsubsection}
-      {0.8em}
-      {}
-  # Optional: extra space before/after headings
-  - \titlespacing*{\section}{0pt}{2ex plus 1ex minus .2ex}{1ex}
-  - \titlespacing*{\subsection}{0pt}{1.5ex plus 1ex minus .2ex}{0.8ex}
-  - \titlespacing*{\subsubsection}{0pt}{1ex plus .5ex minus .2ex}{0.5ex}
-geometry: margin=1in
----
-
 <h1>
 Classical vs RL Pricing for Perishable Inventory under Stochastic Demand
 </h1>
