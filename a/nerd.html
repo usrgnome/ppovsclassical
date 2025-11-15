@@ -1,0 +1,1625 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>WebGL Minecraft-like Chunk (Textured, AO, Raycast, Daylight)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: #000;
+        height: 100%;
+        width: 100%;
+      }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        cursor: crosshair;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="glcanvas"></canvas>
+    <script>
+      "use strict";
+
+      /* ===============================
+         Globals / Config
+      =============================== */
+
+      const CHUNK_W = 16;
+      const CHUNK_D = 16;
+      const CHUNK_H = 50;
+
+      const BLOCK_AIR = 0;
+      const BLOCK_GRASS = 1;
+      const BLOCK_DIRT = 2;
+      const BLOCK_STONE = 3;
+      const BLOCK_WOOD = 4;
+      const BLOCK_LEAVES = 5;
+      const BLOCK_WATER = 6;
+      const BLOCK_TORCH = 7;
+      const BLOCK_FLOWER = 8;
+
+      // Approximate Minecraft-style block light levels (0–15)
+      const MAX_LIGHT = 15;
+      const BLOCK_EMISSION = {
+        [BLOCK_AIR]: 0,
+        [BLOCK_GRASS]: 0,
+        [BLOCK_DIRT]: 0,
+        [BLOCK_STONE]: 0,
+        [BLOCK_WOOD]: 0,
+        [BLOCK_LEAVES]: 0,
+        [BLOCK_WATER]: 0,
+        [BLOCK_TORCH]: 14, // bright, but not max
+        [BLOCK_FLOWER]: 0,
+      };
+
+      // Which blocks fully stop block light.
+      const BLOCK_OPAQUE = {
+        [BLOCK_AIR]: false,
+        [BLOCK_GRASS]: true,
+        [BLOCK_DIRT]: true,
+        [BLOCK_STONE]: true,
+        [BLOCK_WOOD]: true,
+        [BLOCK_LEAVES]: false,
+        [BLOCK_WATER]: false,
+        [BLOCK_TORCH]: false,
+        [BLOCK_FLOWER]: false,
+      };
+
+      // Which blocks hide faces behind them (occlusion for meshing & AO)
+      const BLOCK_OCCLUDE = {
+        [BLOCK_AIR]: false,
+        [BLOCK_GRASS]: true,
+        [BLOCK_DIRT]: true,
+        [BLOCK_STONE]: true,
+        [BLOCK_WOOD]: true,
+        [BLOCK_LEAVES]: false,
+        [BLOCK_WATER]: false,
+        [BLOCK_TORCH]: false,
+        [BLOCK_FLOWER]: false,
+      };
+
+      const WATER_HEIGHT = 0.9;
+      const TORCH_HALF = 8 / 16;
+      const FLOWER_HEIGHT = 0.7;
+      const FLOWER_HALF = 0.12;
+
+      // Minecraft-style ambient occlusion strength (0 = off, 1 = full)
+      const AO_STRENGTH = 1.0;
+
+      // Simple day/night cycle (affects skylight, not block light)
+      let timeOfDay = 0.0; // radians, 0..2π
+      let daylightFactor = 1.0; // 0.2..1.0
+
+      /* ===============================
+         World storage & helpers
+      =============================== */
+
+      const blocks = new Uint8Array(CHUNK_W * CHUNK_D * CHUNK_H);
+      const blockLight = new Uint8Array(CHUNK_W * CHUNK_D * CHUNK_H); // 0..15
+      const skyLight = new Uint8Array(CHUNK_W * CHUNK_D * CHUNK_H); // 0..15
+      const packedLight = new Uint8Array(CHUNK_W * CHUNK_D * CHUNK_H); // (torch<<4 | sun)
+
+      function idx(x, y, z) {
+        return x + CHUNK_W * (z + CHUNK_D * y);
+      }
+
+      function inBounds(x, y, z) {
+        return (
+          x >= 0 &&
+          x < CHUNK_W &&
+          y >= 0 &&
+          y < CHUNK_H &&
+          z >= 0 &&
+          z < CHUNK_D
+        );
+      }
+
+      function getBlock(x, y, z) {
+        if (!inBounds(x, y, z)) return BLOCK_AIR;
+        return blocks[idx(x, y, z)];
+      }
+
+      function setBlock(x, y, z, blockId) {
+        if (!inBounds(x, y, z)) return;
+        blocks[idx(x, y, z)] = blockId;
+      }
+
+      function blockOccludes(x, y, z) {
+        if (!inBounds(x, y, z)) return false;
+        return BLOCK_OCCLUDE[getBlock(x, y, z)];
+      }
+
+      function blockIsOpaque(x, y, z) {
+        if (!inBounds(x, y, z)) return false;
+        return BLOCK_OPAQUE[getBlock(x, y, z)];
+      }
+
+      /* ===============================
+         World generation (simple flat world + tree + pool)
+      =============================== */
+
+      function generateChunk() {
+        const baseHeight = 20; // flat ground
+
+        for (let x = 0; x < CHUNK_W; x++) {
+          for (let z = 0; z < CHUNK_D; z++) {
+            for (let y = 0; y < CHUNK_H; y++) {
+              let blockId = BLOCK_AIR;
+              if (y < baseHeight - 4) blockId = BLOCK_STONE;
+              else if (y < baseHeight - 1) blockId = BLOCK_DIRT;
+              else if (y === baseHeight - 1) blockId = BLOCK_GRASS;
+              setBlock(x, y, z, blockId);
+            }
+          }
+        }
+
+        // Simple tree: trunk + leaves
+        const tx = 8;
+        const tz = 8;
+        const ty = baseHeight;
+
+        // trunk
+        for (let y = ty; y < ty + 4; y++) {
+          if (y >= 0 && y < CHUNK_H) {
+            setBlock(tx, y, tz, BLOCK_WOOD);
+          }
+        }
+
+        // leaves blob (don't put leaves in trunk column so top is visible)
+        for (let x = tx - 2; x <= tx + 2; x++) {
+          for (let y = ty + 2; y <= ty + 4; y++) {
+            for (let z = tz - 2; z <= tz + 2; z++) {
+              if (!inBounds(x, y, z)) continue;
+              if (x === tx && z === tz) continue; // never overwrite trunk column
+              setBlock(x, y, z, BLOCK_LEAVES);
+            }
+          }
+        }
+
+        // Single water block in a small "pit"
+        const wx = 5,
+          wy = baseHeight - 1,
+          wz = 5;
+        if (inBounds(wx, wy, wz)) {
+          setBlock(wx, wy, wz, BLOCK_WATER);
+        }
+
+        // Small 4x4 water pool
+        const poolSize = 4;
+        const px0 = 0;
+        const pz0 = Math.floor(CHUNK_D / 2 - poolSize / 2);
+
+        for (let px = px0; px < px0 + poolSize; px++) {
+          for (let pz = pz0; pz < pz0 + poolSize; pz++) {
+            if (!inBounds(px, baseHeight - 2, pz)) continue;
+
+            // Bottom of pool: dirt
+            setBlock(px, baseHeight - 2, pz, BLOCK_DIRT);
+
+            // Water at grass level
+            setBlock(px, baseHeight - 1, pz, BLOCK_WATER);
+
+            // Clear air above it
+            for (let y = baseHeight; y < baseHeight + 3 && y < CHUNK_H; y++) {
+              setBlock(px, y, pz, BLOCK_AIR);
+            }
+          }
+        }
+
+        // Torch on grass
+        const torx = 10,
+          tory = baseHeight,
+          torz = 10;
+        if (inBounds(torx, tory, torz)) {
+          setBlock(torx, tory, torz, BLOCK_TORCH);
+        }
+      }
+
+      /* ===============================
+         Lighting
+         - Block light (torches) via BFS
+         - Skylight (day light) via BFS from top
+      =============================== */
+
+      function computeLight() {
+        blockLight.fill(0);
+        skyLight.fill(0);
+
+        const dirs = [
+          [1, 0, 0],
+          [-1, 0, 0],
+          [0, 1, 0],
+          [0, -1, 0],
+          [0, 0, 1],
+          [0, 0, -1],
+        ];
+
+        /* ----- Block light (emissive blocks: torches, etc.) ----- */
+
+        const qx = [],
+          qy = [],
+          qz = [],
+          qv = [];
+
+        function enqueueBlock(x, y, z, v) {
+          if (!inBounds(x, y, z)) return;
+          const i = idx(x, y, z);
+          if (v <= blockLight[i]) return; // already brighter or equal
+          blockLight[i] = v;
+          qx.push(x);
+          qy.push(y);
+          qz.push(z);
+          qv.push(v);
+        }
+
+        // Seed from all emitting blocks
+        for (let x = 0; x < CHUNK_W; x++) {
+          for (let y = 0; y < CHUNK_H; y++) {
+            for (let z = 0; z < CHUNK_D; z++) {
+              const b = getBlock(x, y, z);
+              const em = BLOCK_EMISSION[b] | 0;
+              if (em > 0) {
+                enqueueBlock(x, y, z, em);
+              }
+            }
+          }
+        }
+
+        let head = 0;
+        while (head < qx.length) {
+          const x = qx[head];
+          const y = qy[head];
+          const z = qz[head];
+          const v = qv[head];
+          head++;
+
+          const nv = v - 1;
+          if (nv <= 0) continue;
+
+          for (let d = 0; d < dirs.length; d++) {
+            const nx = x + dirs[d][0];
+            const ny = y + dirs[d][1];
+            const nz = z + dirs[d][2];
+            if (!inBounds(nx, ny, nz)) continue;
+
+            const nb = getBlock(nx, ny, nz);
+            if (BLOCK_OPAQUE[nb]) continue; // block light doesn't pass through solids
+            enqueueBlock(nx, ny, nz, nv);
+          }
+        }
+
+        /* ----- Skylight (daylight) ----- */
+
+        const sqx = [],
+          sqy = [],
+          sqz = [],
+          sqv = [];
+
+        function enqueueSky(x, y, z, v) {
+          if (!inBounds(x, y, z)) return;
+          const i = idx(x, y, z);
+          if (v <= skyLight[i]) return;
+          skyLight[i] = v;
+          sqx.push(x);
+          sqy.push(y);
+          sqz.push(z);
+          sqv.push(v);
+        }
+
+        // Seed skylight from the top layer wherever it's not blocked
+        const topY = CHUNK_H - 1;
+        for (let x = 0; x < CHUNK_W; x++) {
+          for (let z = 0; z < CHUNK_D; z++) {
+            const b = getBlock(x, topY, z);
+            if (!BLOCK_OPAQUE[b]) {
+              enqueueSky(x, topY, z, MAX_LIGHT);
+            }
+          }
+        }
+
+        head = 0;
+        while (head < sqx.length) {
+          const x = sqx[head];
+          const y = sqy[head];
+          const z = sqz[head];
+          const v = sqv[head];
+          head++;
+
+          const nv = v - 1;
+          if (nv <= 0) continue;
+
+          for (let d = 0; d < dirs.length; d++) {
+            const nx = x + dirs[d][0];
+            const ny = y + dirs[d][1];
+            const nz = z + dirs[d][2];
+            if (!inBounds(nx, ny, nz)) continue;
+
+            const nb = getBlock(nx, ny, nz);
+            if (BLOCK_OPAQUE[nb]) continue; // skylight doesn't pass through solids
+            enqueueSky(nx, ny, nz, nv);
+          }
+        }
+
+        for (let i = 0; i < packedLight.length; i++) {
+          const torch = blockLight[i] & 0x0f;
+          const sun = skyLight[i] & 0x0f;
+          packedLight[i] = (torch << 4) | sun;
+        }
+      }
+
+      // Combined lighting (block light + skylight * daylightFactor)
+      function sampleBlockLight(x, y, z) {
+        if (!inBounds(x, y, z)) return 0;
+        const i = idx(x, y, z);
+        const block = blockLight[i] / MAX_LIGHT;
+        const sky = (skyLight[i] / MAX_LIGHT) * daylightFactor;
+        const v = Math.max(block, sky);
+        return v;
+      }
+
+      /* ===============================
+         Texture atlas & face definitions
+      =============================== */
+
+      const ATLAS_COLS = 16;
+      const ATLAS_ROWS = 16;
+
+      const du = 1.0 / ATLAS_COLS;
+      const dv = 1.0 / ATLAS_ROWS;
+
+      // faceIndex: 0=+X, 1=-X, 2=+Y, 3=-Y, 4=+Z, 5=-Z
+      function getTileXY(blockId, faceIndex) {
+        switch (blockId) {
+          case BLOCK_GRASS:
+            if (faceIndex === 2) return [0, 0]; // grass top
+            if (faceIndex === 3) return [2, 0]; // dirt bottom
+            return [3, 0]; // grass side
+          case BLOCK_DIRT:
+            return [2, 0];
+          case BLOCK_STONE:
+            return [1, 0];
+          case BLOCK_WOOD:
+            if (faceIndex === 2 || faceIndex === 3) return [5, 1]; // log top/bottom
+            return [4, 1]; // log side
+          case BLOCK_LEAVES:
+            return [4, 3];
+          case BLOCK_WATER:
+            return [15, 12];
+          case BLOCK_TORCH:
+            return [0, 5];
+          case BLOCK_FLOWER:
+            return [12, 0];
+          default:
+            return [15, 15]; // debug magenta-ish tile
+        }
+      }
+
+      // Vertex format: [pos.x, pos.y, pos.z,  u, v,  light]  => 6 floats
+      const faces = [
+        // +X
+        {
+          dx: 1,
+          dy: 0,
+          dz: 0,
+          corners: [
+            [1, 0, 0],
+            [1, 1, 0],
+            [1, 1, 1],
+            [1, 0, 0],
+            [1, 1, 1],
+            [1, 0, 1],
+          ],
+        },
+        // -X
+        {
+          dx: -1,
+          dy: 0,
+          dz: 0,
+          corners: [
+            [0, 0, 1],
+            [0, 1, 1],
+            [0, 1, 0],
+            [0, 0, 1],
+            [0, 1, 0],
+            [0, 0, 0],
+          ],
+        },
+        // +Y
+        {
+          dx: 0,
+          dy: 1,
+          dz: 0,
+          corners: [
+            [0, 1, 1],
+            [1, 1, 1],
+            [1, 1, 0],
+            [0, 1, 1],
+            [1, 1, 0],
+            [0, 1, 0],
+          ],
+        },
+        // -Y
+        {
+          dx: 0,
+          dy: -1,
+          dz: 0,
+          corners: [
+            [0, 0, 0],
+            [1, 0, 0],
+            [1, 0, 1],
+            [0, 0, 0],
+            [1, 0, 1],
+            [0, 0, 1],
+          ],
+        },
+        // +Z
+        {
+          dx: 0,
+          dy: 0,
+          dz: 1,
+          corners: [
+            [1, 0, 1],
+            [1, 1, 1],
+            [0, 1, 1],
+            [1, 0, 1],
+            [0, 1, 1],
+            [0, 0, 1],
+          ],
+        },
+        // -Z
+        {
+          dx: 0,
+          dy: 0,
+          dz: -1,
+          corners: [
+            [0, 0, 0],
+            [0, 1, 0],
+            [1, 1, 0],
+            [0, 0, 0],
+            [1, 1, 0],
+            [1, 0, 0],
+          ],
+        },
+      ];
+
+      // AO tangent axes per face (normal, side1, side2)
+      const FACE_AXES = [
+        // +X
+        {
+          n: [1, 0, 0],
+          t1: [0, 1, 0], // Y
+          t2: [0, 0, 1], // Z
+        },
+        // -X
+        {
+          n: [-1, 0, 0],
+          t1: [0, 1, 0],
+          t2: [0, 0, 1],
+        },
+        // +Y
+        {
+          n: [0, 1, 0],
+          t1: [1, 0, 0], // X
+          t2: [0, 0, 1], // Z
+        },
+        // -Y
+        {
+          n: [0, -1, 0],
+          t1: [1, 0, 0],
+          t2: [0, 0, 1],
+        },
+        // +Z
+        {
+          n: [0, 0, 1],
+          t1: [1, 0, 0], // X
+          t2: [0, 1, 0], // Y
+        },
+        // -Z
+        {
+          n: [0, 0, -1],
+          t1: [1, 0, 0],
+          t2: [0, 1, 0],
+        },
+      ];
+
+      /* ===============================
+         Shared UV mapping & lighting/AO
+      =============================== */
+
+      // Compute base UV (in 0..1 space) for a unit cube face at local position (lx,ly,lz)
+      function computeLocalUV(faceIndex, lx, ly, lz) {
+        let u = 0,
+          v = 0;
+        switch (faceIndex) {
+          case 0: // +X
+            u = 1.0 - lz;
+            v = ly;
+            break;
+          case 1: // -X
+            u = lz;
+            v = ly;
+            break;
+          case 2: // +Y
+            u = lx;
+            v = 1.0 - lz;
+            break;
+          case 3: // -Y
+            u = lx;
+            v = lz;
+            break;
+          case 4: // +Z
+            u = lx;
+            v = ly;
+            break;
+          case 5: // -Z
+            u = 1.0 - lx;
+            v = ly;
+            break;
+        }
+        // V-flip for the atlas
+        v = 1.0 - v;
+        return { u, v };
+      }
+
+      // Face light (combined light), using max of current voxel + neighbor
+      function computeFaceLight(x, y, z, faceIndex) {
+        const f = faces[faceIndex];
+        const nx = x + f.dx;
+        const ny = y + f.dy;
+        const nz = z + f.dz;
+
+        let l = sampleBlockLight(x, y, z);
+        l = Math.max(l, sampleBlockLight(nx, ny, nz));
+
+        // Optional minimum light so things aren't pitch black
+        const minL = 0.15;
+        return Math.max(l, minL);
+      }
+
+      // Minecraft-style ambient occlusion per vertex.
+      // Uses side-side-corner pattern:
+      //  - if both side neighbors are solid, corner occlusion is max
+      //  - otherwise occlusion = number of solid neighbors
+      function computeVertexAO(x, y, z, faceIndex, lx, ly, lz) {
+        const axes = FACE_AXES[faceIndex];
+        const n = axes.n;
+        const t1 = axes.t1;
+        const t2 = axes.t2;
+
+        // Base cell just outside the face
+        const baseX = x + (n[0] > 0 ? 1 : n[0] < 0 ? -1 : 0);
+        const baseY = y + (n[1] > 0 ? 1 : n[1] < 0 ? -1 : 0);
+        const baseZ = z + (n[2] > 0 ? 1 : n[2] < 0 ? -1 : 0);
+
+        // Which side of t1/t2 this vertex is on (signs)
+        function signForAxis(ax, ay, az) {
+          if (ax !== 0) return lx > 0.5 ? 1 : -1;
+          if (ay !== 0) return ly > 0.5 ? 1 : -1;
+          if (az !== 0) return lz > 0.5 ? 1 : -1;
+          return 1;
+        }
+
+        const s1 = signForAxis(t1[0], t1[1], t1[2]);
+        const s2 = signForAxis(t2[0], t2[1], t2[2]);
+
+        // Neighbor positions relative to base
+        const side1X = baseX + s1 * t1[0];
+        const side1Y = baseY + s1 * t1[1];
+        const side1Z = baseZ + s1 * t1[2];
+
+        const side2X = baseX + s2 * t2[0];
+        const side2Y = baseY + s2 * t2[1];
+        const side2Z = baseZ + s2 * t2[2];
+
+        const cornerX = baseX + s1 * t1[0] + s2 * t2[0];
+        const cornerY = baseY + s1 * t1[1] + s2 * t2[1];
+        const cornerZ = baseZ + s1 * t1[2] + s2 * t2[2];
+
+        const side1Occ = blockOccludes(side1X, side1Y, side1Z) ? 1 : 0;
+        const side2Occ = blockOccludes(side2X, side2Y, side2Z) ? 1 : 0;
+        const cornerOcc = blockOccludes(cornerX, cornerY, cornerZ) ? 1 : 0;
+
+        let occ;
+        if (side1Occ && side2Occ) {
+          // If both sides are solid, assume corner also fully shadowed (classic MC trick)
+          occ = 3;
+        } else {
+          occ = side1Occ + side2Occ + cornerOcc;
+        }
+
+        // occ in [0..3] -> aoLevel in [1..0]
+        const aoLevel = (3 - occ) / 3; // 1, 2/3, 1/3, 0
+        // Blend between no AO (1.0) and this AO depending on AO_STRENGTH
+        return 1.0 - AO_STRENGTH + AO_STRENGTH * aoLevel;
+      }
+
+      // Final vertex lighting = combined light * AO
+      function computeVertexLighting(x, y, z, faceIndex, lx, ly, lz) {
+        const faceL = computeFaceLight(x, y, z, faceIndex); // 0..1
+        const ao = computeVertexAO(x, y, z, faceIndex, lx, ly, lz); // 0..1
+        return faceL * ao;
+      }
+
+      /* ===============================
+         Block definitions & model registry
+      =============================== */
+
+      const BLOCK_DEF = {
+        [BLOCK_AIR]: {
+          id: BLOCK_AIR,
+          name: "air",
+          model: null,
+          transparent: true,
+          occlude: false,
+        },
+
+        [BLOCK_GRASS]: {
+          id: BLOCK_GRASS,
+          name: "grass",
+          model: "cube",
+          transparent: false,
+          occlude: true,
+          yMin: 0.0,
+          yMax: 1.0,
+        },
+
+        [BLOCK_DIRT]: {
+          id: BLOCK_DIRT,
+          name: "dirt",
+          model: "cube",
+          transparent: false,
+          occlude: true,
+          yMin: 0.0,
+          yMax: 1.0,
+        },
+
+        [BLOCK_STONE]: {
+          id: BLOCK_STONE,
+          name: "stone",
+          model: "cube",
+          transparent: false,
+          occlude: true,
+          yMin: 0.0,
+          yMax: 1.0,
+        },
+
+        [BLOCK_WOOD]: {
+          id: BLOCK_WOOD,
+          name: "log",
+          model: "cube",
+          transparent: false,
+          occlude: true,
+          yMin: 0.0,
+          yMax: 1.0,
+        },
+
+        [BLOCK_LEAVES]: {
+          id: BLOCK_LEAVES,
+          name: "leaves",
+          model: "cube",
+          transparent: true,
+          occlude: true, // hides faces behind it, but is transparent in shader
+          yMin: 0.0,
+          yMax: 1.0,
+        },
+
+        [BLOCK_WATER]: {
+          id: BLOCK_WATER,
+          name: "water",
+          model: "cube",
+          transparent: true,
+          occlude: false,
+          yMin: 0.0,
+          yMax: WATER_HEIGHT,
+        },
+
+        [BLOCK_TORCH]: {
+          id: BLOCK_TORCH,
+          name: "torch",
+          model: "torch",
+          transparent: true,
+          occlude: false,
+        },
+
+        [BLOCK_FLOWER]: {
+          id: BLOCK_FLOWER,
+          name: "flower",
+          model: "cross_plant",
+          transparent: true,
+          occlude: false,
+          height: FLOWER_HEIGHT,
+          halfWidth: FLOWER_HALF,
+        },
+      };
+
+      const MODEL_REGISTRY = {
+        _models: Object.create(null),
+        register(name, model) {
+          this._models[name] = model;
+        },
+        get(name) {
+          return this._models[name] || null;
+        },
+      };
+
+      function faceOccludedForBlock(blockId, blockDef, nx, ny, nz) {
+        if (!inBounds(nx, ny, nz)) return false;
+
+        const nbId = getBlock(nx, ny, nz);
+        if (nbId === BLOCK_AIR) return false;
+
+        const nbDef = BLOCK_DEF[nbId];
+        if (!nbDef) return false;
+
+        if (BLOCK_OCCLUDE[nbId]) {
+          return !!nbDef.occlude;
+        }
+
+        // Same-block merging
+        return nbId === blockId;
+      }
+
+      /* ===============================
+         Block model classes
+      =============================== */
+
+      class BlockModel {
+        emit(target, blockId, def, x, y, z) {
+          // override
+        }
+      }
+
+      class CubeModel extends BlockModel {
+        constructor(options = {}) {
+          super();
+          this.useAO = options.useAO !== false;
+        }
+
+        emit(target, blockId, def, x, y, z) {
+          const yMin = def.yMin !== undefined ? def.yMin : 0.0;
+          const yMax = def.yMax !== undefined ? def.yMax : 1.0;
+
+          for (let f = 0; f < faces.length; f++) {
+            const face = faces[f];
+            const nx = x + face.dx;
+            const ny = y + face.dy;
+            const nz = z + face.dz;
+
+            if (faceOccludedForBlock(blockId, def, nx, ny, nz)) continue;
+
+            const tile = getTileXY(blockId, f);
+            const baseU = tile[0] * du;
+            const baseV = tile[1] * dv;
+
+            const corners = face.corners;
+
+            for (let vi = 0; vi < corners.length; vi++) {
+              const corner = corners[vi];
+
+              let lx = corner[0];
+              let ly = corner[1];
+              let lz = corner[2];
+
+              ly = yMin + (yMax - yMin) * ly;
+
+              const { u, v: vvLocal } = computeLocalUV(
+                f,
+                corner[0],
+                corner[1],
+                corner[2]
+              );
+
+              const worldX = x + lx;
+              const worldY = y + ly;
+              const worldZ = z + lz;
+
+              const uu = baseU + u * du;
+              const vv = baseV + vvLocal * dv;
+
+              const light = this.useAO
+                ? computeVertexLighting(
+                    x,
+                    y,
+                    z,
+                    f,
+                    corner[0],
+                    corner[1],
+                    corner[2]
+                  )
+                : computeFaceLight(x, y, z, f);
+
+              target.push(worldX, worldY, worldZ, uu, vv, light);
+            }
+          }
+        }
+      }
+
+      class TorchModel extends BlockModel {
+        emit(target, blockId, def, x, y, z) {
+          const W = 2.0 / 16.0;
+          const H = 10.0 / 16.0;
+          const D = 2.0 / 16.0;
+
+          const Xoff = 0.5 - W * 0.5;
+          const Zoff = 0.5 - D * 0.5;
+
+          const baseLight = sampleBlockLight(x, y, z);
+          const minL = 0.6;
+          const faceLight = Math.max(baseLight, minL);
+
+          for (let f = 0; f < faces.length; f++) {
+            const face = faces[f];
+            const corners = face.corners;
+
+            const tile = getTileXY(blockId, f);
+            const baseU = tile[0] * du;
+            const baseV = tile[1] * dv;
+
+            const isSide = f === 0 || f === 1 || f === 4 || f === 5;
+            const sideCenter = 0.5;
+            const sideUMin = sideCenter - 1 / 16;
+            const sideUMax = sideCenter + 1 / 16;
+
+            for (let vi = 0; vi < corners.length; vi++) {
+              const c = corners[vi];
+
+              const lx = c[0];
+              const ly = c[1];
+              const lz = c[2];
+
+              const { u, v: vvLocal } = computeLocalUV(f, lx, ly, lz);
+              let uLocal = u;
+
+              if (isSide) {
+                uLocal = sideUMin + (sideUMax - sideUMin) * u;
+              }
+
+              const localX = lx * W + Xoff;
+              const localY = ly * H;
+              const localZ = lz * D + Zoff;
+
+              const worldX = x + localX;
+              const worldY = y + localY;
+              const worldZ = z + localZ;
+
+              const uu = baseU + uLocal * du;
+              const vv = baseV + vvLocal * dv;
+
+              target.push(worldX, worldY, worldZ, uu, vv, faceLight);
+            }
+          }
+        }
+      }
+
+      class CrossPlantModel extends BlockModel {
+        constructor(options = {}) {
+          super();
+          this.defaultHeight = options.height ?? FLOWER_HEIGHT;
+          this.defaultHalfWidth = options.halfWidth ?? FLOWER_HALF;
+        }
+
+        emit(target, blockId, def, x, y, z) {
+          const cx = x + 0.5;
+          const cz = z + 0.5;
+
+          const height =
+            def.height !== undefined ? def.height : this.defaultHeight;
+          const half =
+            def.halfWidth !== undefined ? def.halfWidth : this.defaultHalfWidth;
+
+          const y0 = y;
+          const y1 = y + height;
+
+          const baseLight = sampleBlockLight(x, y, z);
+          const faceLight = Math.max(baseLight, 0.7);
+
+          const tile = getTileXY(blockId, 0);
+          const baseU = tile[0] * du;
+          const baseV = tile[1] * dv;
+          const maxU = baseU + du;
+          const maxV = baseV + dv;
+
+          function pushVertex(px, py, pz, u, v) {
+            target.push(px, py, pz, u, v, faceLight);
+          }
+
+          function pushQuad(p0, p1, p2, p3) {
+            // front
+            pushVertex(p0[0], p0[1], p0[2], baseU, maxV);
+            pushVertex(p1[0], p1[1], p1[2], baseU, baseV);
+            pushVertex(p2[0], p2[1], p2[2], maxU, baseV);
+
+            pushVertex(p0[0], p0[1], p0[2], baseU, maxV);
+            pushVertex(p2[0], p2[1], p2[2], maxU, baseV);
+            pushVertex(p3[0], p3[1], p3[2], maxU, maxV);
+
+            // back
+            pushVertex(p2[0], p2[1], p2[2], maxU, baseV);
+            pushVertex(p1[0], p1[1], p1[2], baseU, baseV);
+            pushVertex(p0[0], p0[1], p0[2], baseU, maxV);
+
+            pushVertex(p3[0], p3[1], p3[2], maxU, maxV);
+            pushVertex(p2[0], p2[1], p2[2], maxU, baseV);
+            pushVertex(p0[0], p0[1], p0[2], baseU, maxV);
+          }
+
+          // Plane 1 (/)
+          const p0 = [cx - half, y0, cz - half];
+          const p1 = [cx - half, y1, cz - half];
+          const p2 = [cx + half, y1, cz + half];
+          const p3 = [cx + half, y0, cz + half];
+
+          // Plane 2 (\)
+          const q0 = [cx - half, y0, cz + half];
+          const q1 = [cx - half, y1, cz + half];
+          const q2 = [cx + half, y1, cz - half];
+          const q3 = [cx + half, y0, cz - half];
+
+          pushQuad(p0, p1, p2, p3);
+          pushQuad(q0, q1, q2, q3);
+        }
+      }
+
+      MODEL_REGISTRY.register("cube", new CubeModel());
+      MODEL_REGISTRY.register("torch", new TorchModel());
+      MODEL_REGISTRY.register("cross_plant", new CrossPlantModel());
+
+      /* ===============================
+         Model emit / mesh building
+      =============================== */
+
+      function buildMeshes() {
+        const opaqueVerts = [];
+        const transpVerts = [];
+
+        for (let x = 0; x < CHUNK_W; x++) {
+          for (let y = 0; y < CHUNK_H; y++) {
+            for (let z = 0; z < CHUNK_D; z++) {
+              const blockId = getBlock(x, y, z);
+              if (blockId === BLOCK_AIR) continue;
+
+              const def = BLOCK_DEF[blockId];
+              if (!def || !def.model) continue;
+
+              const model = MODEL_REGISTRY.get(def.model);
+              if (!model) continue;
+
+              const target = def.transparent ? transpVerts : opaqueVerts;
+              model.emit(target, blockId, def, x, y, z);
+            }
+          }
+        }
+
+        return {
+          opaque: new Float32Array(opaqueVerts),
+          transparent: new Float32Array(transpVerts),
+        };
+      }
+
+      /* ===============================
+         WebGL setup
+      =============================== */
+
+      const canvas = document.getElementById("glcanvas");
+      const gl =
+        canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+
+      if (!gl) {
+        alert("WebGL not supported");
+      }
+
+      function resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const displayWidth = Math.floor(canvas.clientWidth * dpr);
+        const displayHeight = Math.floor(canvas.clientHeight * dpr);
+        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+          canvas.width = displayWidth;
+          canvas.height = displayHeight;
+        }
+      }
+      window.addEventListener("resize", resizeCanvas);
+      resizeCanvas();
+
+      function createShader(type, src) {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+          console.error(gl.getShaderInfoLog(s));
+          throw new Error("Shader compile error");
+        }
+        return s;
+      }
+
+      function createProgram(vsSrc, fsSrc) {
+        const vs = createShader(gl.VERTEX_SHADER, vsSrc);
+        const fs = createShader(gl.FRAGMENT_SHADER, fsSrc);
+        const p = gl.createProgram();
+        gl.attachShader(p, vs);
+        gl.attachShader(p, fs);
+        gl.linkProgram(p);
+        if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+          console.error(gl.getProgramInfoLog(p));
+          throw new Error("Program link error");
+        }
+        return p;
+      }
+
+      const vsSrc = `
+        attribute vec3 a_pos;
+        attribute vec2 a_uv;
+        attribute float a_light;
+
+        uniform mat4 u_mvp;
+
+        varying vec2 v_uv;
+        varying float v_light;
+
+        void main() {
+          gl_Position = u_mvp * vec4(a_pos, 1.0);
+          v_uv = a_uv;
+          v_light = a_light;
+        }
+      `;
+
+      const fsSrc = `
+        precision mediump float;
+
+        varying vec2 v_uv;
+        varying float v_light;
+
+        uniform sampler2D u_texAtlas;
+
+        void main() {
+          vec4 tex = texture2D(u_texAtlas, v_uv);
+          if (tex.a < 0.05) discard;
+
+          // v_light already includes combined light and AO in 0..1
+          float shade = 0.5 + 0.5 * v_light;
+          tex.rgb *= shade;
+
+          gl_FragColor = tex;
+        }
+      `;
+
+      const program = createProgram(vsSrc, fsSrc);
+      gl.useProgram(program);
+
+      const a_pos = gl.getAttribLocation(program, "a_pos");
+      const a_uv = gl.getAttribLocation(program, "a_uv");
+      const a_light = gl.getAttribLocation(program, "a_light");
+      const u_mvp = gl.getUniformLocation(program, "u_mvp");
+      const u_texAtlas = gl.getUniformLocation(program, "u_texAtlas");
+
+      /* ===============================
+         Matrix utilities
+      =============================== */
+
+      function mat4Create() {
+        const out = new Float32Array(16);
+        out[0] = 1;
+        out[5] = 1;
+        out[10] = 1;
+        out[15] = 1;
+        return out;
+      }
+
+      function mat4Perspective(out, fovy, aspect, near, far) {
+        const f = 1.0 / Math.tan(fovy / 2);
+        const nf = 1 / (near - far);
+
+        out[0] = f / aspect;
+        out[1] = 0;
+        out[2] = 0;
+        out[3] = 0;
+
+        out[4] = 0;
+        out[5] = f;
+        out[6] = 0;
+        out[7] = 0;
+
+        out[8] = 0;
+        out[9] = 0;
+        out[10] = (far + near) * nf;
+        out[11] = -1;
+
+        out[12] = 0;
+        out[13] = 0;
+        out[14] = 2 * far * near * nf;
+        out[15] = 0;
+      }
+
+      function mat4LookAt(out, eye, center, up) {
+        let ex = eye[0],
+          ey = eye[1],
+          ez = eye[2];
+        let cx = center[0],
+          cy = center[1],
+          cz = center[2];
+        let upx = up[0],
+          upy = up[1],
+          upz = up[2];
+
+        let zx = ex - cx;
+        let zy = ey - cy;
+        let zz = ez - cz;
+
+        let len = Math.hypot(zx, zy, zz);
+        if (len === 0) {
+          zx = 0;
+          zy = 0;
+          zz = 1;
+        } else {
+          zx /= len;
+          zy /= len;
+          zz /= len;
+        }
+
+        let xx = upy * zz - upz * zy;
+        let xy = upz * zx - upx * zz;
+        let xz = upx * zy - upy * zx;
+
+        len = Math.hypot(xx, xy, xz);
+        if (len === 0) {
+          xx = 1;
+          xy = 0;
+          xz = 0;
+        } else {
+          xx /= len;
+          xy /= len;
+          xz /= len;
+        }
+
+        let yx = zy * xz - zz * xy;
+        let yy = zz * xx - zx * xz;
+        let yz = zx * xy - zy * xx;
+
+        len = Math.hypot(yx, yy, yz);
+        if (len === 0) {
+          yx = 0;
+          yy = 1;
+          yz = 0;
+        } else {
+          yx /= len;
+          yy /= len;
+          yz /= len;
+        }
+
+        out[0] = xx;
+        out[1] = yx;
+        out[2] = zx;
+        out[3] = 0;
+        out[4] = xy;
+        out[5] = yy;
+        out[6] = zy;
+        out[7] = 0;
+        out[8] = xz;
+        out[9] = yz;
+        out[10] = zz;
+        out[11] = 0;
+        out[12] = -(xx * ex + xy * ey + xz * ez);
+        out[13] = -(yx * ex + yy * ey + yz * ez);
+        out[14] = -(zx * ex + zy * ey + zz * ez);
+        out[15] = 1;
+      }
+
+      function mat4Multiply(out, a, b) {
+        const a00 = a[0],
+          a01 = a[1],
+          a02 = a[2],
+          a03 = a[3];
+        const a10 = a[4],
+          a11 = a[5],
+          a12 = a[6],
+          a13 = a[7];
+        const a20 = a[8],
+          a21 = a[9],
+          a22 = a[10],
+          a23 = a[11];
+        const a30 = a[12],
+          a31 = a[13],
+          a32 = a[14],
+          a33 = a[15];
+
+        const b00 = b[0],
+          b01 = b[1],
+          b02 = b[2],
+          b03 = b[3];
+        const b10 = b[4],
+          b11 = b[5],
+          b12 = b[6],
+          b13 = b[7];
+        const b20 = b[8],
+          b21 = b[9],
+          b22 = b[10],
+          b23 = b[11];
+        const b30 = b[12],
+          b31 = b[13],
+          b32 = b[14],
+          b33 = b[15];
+
+        out[0] = b00 * a00 + b01 * a10 + b02 * a20 + b03 * a30;
+        out[1] = b00 * a01 + b01 * a11 + b02 * a21 + b03 * a31;
+        out[2] = b00 * a02 + b01 * a12 + b02 * a22 + b03 * a32;
+        out[3] = b00 * a03 + b01 * a13 + b02 * a23 + b03 * a33;
+
+        out[4] = b10 * a00 + b11 * a10 + b12 * a20 + b13 * a30;
+        out[5] = b10 * a01 + b11 * a11 + b12 * a21 + b13 * a31;
+        out[6] = b10 * a02 + b11 * a12 + b12 * a22 + b13 * a32;
+        out[7] = b10 * a03 + b11 * a13 + b12 * a23 + b13 * a33;
+
+        out[8] = b20 * a00 + b21 * a10 + b22 * a20 + b23 * a30;
+        out[9] = b20 * a01 + b21 * a11 + b22 * a21 + b23 * a31;
+        out[10] = b20 * a02 + b21 * a12 + b22 * a22 + b23 * a32;
+        out[11] = b20 * a03 + b21 * a13 + b22 * a23 + b23 * a33;
+
+        out[12] = b30 * a00 + b31 * a10 + b32 * a20 + b33 * a30;
+        out[13] = b30 * a01 + b31 * a11 + b32 * a21 + b33 * a31;
+        out[14] = b30 * a02 + b31 * a12 + b32 * a22 + b33 * a32;
+        out[15] = b30 * a03 + b31 * a13 + b32 * a23 + b33 * a33;
+      }
+
+      /* ===============================
+         Buffers & mesh upload
+      =============================== */
+
+      const STRIDE = 6 * 4;
+
+      function setupAttribs() {
+        if (a_pos !== -1) {
+          gl.enableVertexAttribArray(a_pos);
+          gl.vertexAttribPointer(a_pos, 3, gl.FLOAT, false, STRIDE, 0);
+        }
+        if (a_uv !== -1) {
+          gl.enableVertexAttribArray(a_uv);
+          gl.vertexAttribPointer(a_uv, 2, gl.FLOAT, false, STRIDE, 3 * 4);
+        }
+        if (a_light !== -1) {
+          gl.enableVertexAttribArray(a_light);
+          gl.vertexAttribPointer(a_light, 1, gl.FLOAT, false, STRIDE, 5 * 4);
+        }
+      }
+
+      generateChunk();
+      computeLight();
+
+      let opaqueVBO = null;
+      let transpVBO = null;
+      let opaqueCount = 0;
+      let transpCount = 0;
+
+      function uploadMeshes() {
+        const meshes = buildMeshes();
+
+        if (!opaqueVBO) opaqueVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, opaqueVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, meshes.opaque, gl.STATIC_DRAW);
+        opaqueCount = meshes.opaque.length / 6;
+
+        if (!transpVBO) transpVBO = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, transpVBO);
+        gl.bufferData(gl.ARRAY_BUFFER, meshes.transparent, gl.STATIC_DRAW);
+        transpCount = meshes.transparent.length / 6;
+      }
+
+      uploadMeshes();
+
+      /* ===============================
+         Texture loading
+      =============================== */
+
+      let atlasTexture = null;
+      let atlasReady = false;
+
+      function loadAtlas() {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = function () {
+          atlasTexture = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
+          gl.texImage2D(
+            gl.TEXTURE_2D,
+            0,
+            gl.RGBA,
+            gl.RGBA,
+            gl.UNSIGNED_BYTE,
+            img
+          );
+
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+          atlasReady = true;
+        };
+        img.src = "image.png";
+      }
+
+      loadAtlas();
+
+      /* ===============================
+         FPS camera state + controls
+      =============================== */
+
+      const camPos = [CHUNK_W / 2, 25, CHUNK_D / 2 + 8];
+      let yaw = -Math.PI / 4;
+      let pitch = -0.2;
+
+      const keys = {};
+      window.addEventListener("keydown", (e) => {
+        keys[e.code] = true;
+      });
+      window.addEventListener("keyup", (e) => {
+        keys[e.code] = false;
+      });
+
+      const mouseSensitivity = 0.002;
+
+      function getForwardVector() {
+        const cp = Math.cos(pitch);
+        const sp = Math.sin(pitch);
+        const cy = Math.cos(yaw);
+        const sy = Math.sin(yaw);
+        return [cp * cy, sp, cp * sy];
+      }
+
+      function updateCamera(dt) {
+        let vx = 0,
+          vy = 0,
+          vz = 0;
+
+        const speedBase = 5;
+        const speed =
+          keys["ShiftLeft"] || keys["ShiftRight"] ? speedBase * 2 : speedBase;
+
+        const cosYaw = Math.cos(yaw);
+        const sinYaw = Math.sin(yaw);
+        const forwardX = cosYaw;
+        const forwardZ = sinYaw;
+        const rightX = -sinYaw;
+        const rightZ = cosYaw;
+
+        if (keys["KeyW"]) {
+          vx += forwardX;
+          vz += forwardZ;
+        }
+        if (keys["KeyS"]) {
+          vx -= forwardX;
+          vz -= forwardZ;
+        }
+        if (keys["KeyA"]) {
+          vx -= rightX;
+          vz -= rightZ;
+        }
+        if (keys["KeyD"]) {
+          vx += rightX;
+          vz += rightZ;
+        }
+        if (keys["Space"]) {
+          vy += 1;
+        }
+        if (keys["ControlLeft"] || keys["ControlRight"]) {
+          vy -= 1;
+        }
+
+        const len = Math.hypot(vx, vy, vz);
+        if (len > 0) {
+          vx /= len;
+          vy /= len;
+          vz /= len;
+
+          camPos[0] += vx * speed * dt;
+          camPos[1] += vy * speed * dt;
+          camPos[2] += vz * speed * dt;
+        }
+      }
+
+      // Mouse look + pointer lock
+      canvas.addEventListener("click", () => {
+        if (document.pointerLockElement !== canvas) {
+          canvas.requestPointerLock();
+        }
+        // Left click: raycast & break block
+        const hit = raycastFirstSolidFromCamera(10.0);
+        if (hit) {
+          setBlock(hit.x, hit.y, hit.z, BLOCK_AIR);
+          computeLight();
+          uploadMeshes();
+        }
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (document.pointerLockElement !== canvas) return;
+        yaw += e.movementX * mouseSensitivity;
+        pitch -= e.movementY * mouseSensitivity;
+
+        const limit = Math.PI / 2 - 0.01;
+        if (pitch > limit) pitch = limit;
+        if (pitch < -limit) pitch = -limit;
+      });
+
+      /* ===============================
+         Raycasting (3D DDA, Minecraft-style)
+      =============================== */
+
+      function raycastFirstSolid(origin, dir, maxDist) {
+        // Normalized direction
+        const len = Math.hypot(dir[0], dir[1], dir[2]);
+        if (len === 0) return null;
+        const dx = dir[0] / len;
+        const dy = dir[1] / len;
+        const dz = dir[2] / len;
+
+        let x = Math.floor(origin[0]);
+        let y = Math.floor(origin[1]);
+        let z = Math.floor(origin[2]);
+
+        const stepX = dx > 0 ? 1 : dx < 0 ? -1 : 0;
+        const stepY = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+        const stepZ = dz > 0 ? 1 : dz < 0 ? -1 : 0;
+
+        const INF = 1e30;
+
+        let tMaxX, tMaxY, tMaxZ;
+        let tDeltaX, tDeltaY, tDeltaZ;
+
+        if (stepX !== 0) {
+          const nextX = x + (stepX > 0 ? 1 : 0);
+          tMaxX = (nextX - origin[0]) / dx;
+          tDeltaX = 1 / Math.abs(dx);
+        } else {
+          tMaxX = INF;
+          tDeltaX = INF;
+        }
+
+        if (stepY !== 0) {
+          const nextY = y + (stepY > 0 ? 1 : 0);
+          tMaxY = (nextY - origin[1]) / dy;
+          tDeltaY = 1 / Math.abs(dy);
+        } else {
+          tMaxY = INF;
+          tDeltaY = INF;
+        }
+
+        if (stepZ !== 0) {
+          const nextZ = z + (stepZ > 0 ? 1 : 0);
+          tMaxZ = (nextZ - origin[2]) / dz;
+          tDeltaZ = 1 / Math.abs(dz);
+        } else {
+          tMaxZ = INF;
+          tDeltaZ = INF;
+        }
+
+        let t = 0;
+
+        // Step through voxels
+        while (t <= maxDist) {
+          if (inBounds(x, y, z)) {
+            const b = getBlock(x, y, z);
+            if (b !== BLOCK_AIR) {
+              return { x, y, z, t };
+            }
+          }
+
+          if (tMaxX < tMaxY) {
+            if (tMaxX < tMaxZ) {
+              x += stepX;
+              t = tMaxX;
+              tMaxX += tDeltaX;
+            } else {
+              z += stepZ;
+              t = tMaxZ;
+              tMaxZ += tDeltaZ;
+            }
+          } else {
+            if (tMaxY < tMaxZ) {
+              y += stepY;
+              t = tMaxY;
+              tMaxY += tDeltaY;
+            } else {
+              z += stepZ;
+              t = tMaxZ;
+              tMaxZ += tDeltaZ;
+            }
+          }
+        }
+        return null;
+      }
+
+      function raycastFirstSolidFromCamera(maxDist) {
+        const origin = [camPos[0], camPos[1], camPos[2]];
+        const dir = getForwardVector();
+        return raycastFirstSolid(origin, dir, maxDist);
+      }
+
+      /* ===============================
+         Render loop
+      =============================== */
+
+      gl.enable(gl.DEPTH_TEST);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      gl.clearColor(0.5, 0.7, 1.0, 1.0);
+
+      gl.useProgram(program);
+      gl.uniform1i(u_texAtlas, 0);
+
+      const proj = mat4Create();
+      const view = mat4Create();
+      const mvp = mat4Create();
+
+      let lastTimeMs = 0;
+
+      function render(timeMs) {
+        resizeCanvas();
+
+        const dt = Math.min(0.1, (timeMs - (lastTimeMs || timeMs)) * 0.001);
+        lastTimeMs = timeMs;
+
+        // Simple day/night cycle for skylight
+        timeOfDay += dt * 0.05; // adjust speed as desired
+        const twoPi = Math.PI * 2;
+        if (timeOfDay > twoPi) timeOfDay -= twoPi;
+        const sunHeight = Math.max(0.0, Math.sin(timeOfDay)); // 0 at night, 1 at noon
+        daylightFactor = 0.2 + 0.8 * sunHeight; // never fully dark outside
+
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        if (!atlasReady) {
+          requestAnimationFrame(render);
+          return;
+        }
+
+        updateCamera(dt);
+
+        const aspect = canvas.width / canvas.height;
+        mat4Perspective(proj, Math.PI / 3, aspect, 0.1, 300.0);
+
+        const forward = getForwardVector();
+        const eye = camPos;
+        const center = [
+          eye[0] + forward[0],
+          eye[1] + forward[1],
+          eye[2] + forward[2],
+        ];
+        const up = [0, 1, 0];
+
+        mat4LookAt(view, eye, center, up);
+        mat4Multiply(mvp, proj, view);
+        gl.uniformMatrix4fv(u_mvp, false, mvp);
+
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, atlasTexture);
+
+        // Opaque pass
+        gl.bindBuffer(gl.ARRAY_BUFFER, opaqueVBO);
+        setupAttribs();
+        gl.depthMask(true);
+        gl.disable(gl.BLEND);
+        gl.drawArrays(gl.TRIANGLES, 0, opaqueCount);
+
+        // Transparent pass (leaves, water, torch, flower)
+        if (transpCount > 0) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, transpVBO);
+          setupAttribs();
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          gl.drawArrays(gl.TRIANGLES, 0, transpCount);
+          gl.disable(gl.BLEND);
+        }
+
+        requestAnimationFrame(render);
+      }
+
+      requestAnimationFrame(render);
+    </script>
+  </body>
+</html>
